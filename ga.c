@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <stdbool.h>
+#include <math.h>
 
 /* store bits as bytes */
-typedef unsigned char bit_t;
+typedef bool bit_t;
 /* pointer to individual = pointer to the first bit of it */
 typedef bit_t *p_ind;
 /* pointer to population = pointer to the first individual in it */
@@ -46,13 +48,13 @@ void fatal_error(char *filename, int linenum, char *error_msg)
 /* returns a random integer in interval [0;max] */
 int random_int(int max)
 {
-  return rand() % (max+1);
+  return nearbyint (((double)rand () / RAND_MAX) * max);
 }
 
 /* true if succeeded, false otherwise */
-int random_trial(double prob)
+bool random_trial(double prob)
 {
-  return ((double)rand()/RAND_MAX <= prob) ? 1 : 0;
+  return (double)rand()/RAND_MAX <= prob ? true : false;
 }
 
 p_pop allocate(p_pop pop)
@@ -76,7 +78,7 @@ void deallocate(p_pop pop)
   free(pop);
 }
 
-void init()
+void init(void)
 {
   pop = allocate(pop);
   new_pop = allocate(new_pop);
@@ -87,14 +89,14 @@ void init()
       pop[i][j] = random_int(1);
 }
 
-void output()
+void output(void)
 {
   printf("generation: %03d fitness: %f\n", gen_count, rating[best[0]]);
 }
 
-int job_done()
+bool job_done(void)
 {
-  return (gen_count >= 50) ? 1 : 0;
+  return (gen_count >= 50) ? true : false;
 }
 
 void update_best(int ind_idx)
@@ -107,6 +109,8 @@ void update_best(int ind_idx)
   best[i+1] = ind_idx;
 }    
 
+
+/* OneMax function. Reimplement for other fitness functions. */
 double fitness(p_ind ind)
 {
   int i;
@@ -116,11 +120,13 @@ double fitness(p_ind ind)
   return (double)acc;
 }
 
-void eval()
+
+
+void eval(void)
 {
-  int i, j;
+  int i;
   /* reset pointers to the best individuals in the population */
-  for ( i = 0; i < elitism_size; ++i)
+  for (i = 0; i < elitism_size; ++i)
     best[i] = 0;
   /* evaluate fitness for all individuals and record
      elitism_size best of them */
@@ -148,7 +154,6 @@ void select_ind(p_ind ind, p_pop pop)
 /* inserts individual ind into population pop at position pos*/
 void insert(p_ind ind, p_pop pop, int position)
 {
-
   int i;
   for (i = 0; i < chromo_len; ++i)
     pop[position][i] = ind[i];
@@ -177,7 +182,7 @@ void mutate(p_ind ind)
 }
 
 /* generates new_pop from pop and exchanges pop and new_pop */
-void renew_pop()
+void renew_pop(void)
 {
   /* elitism: copy elitism_size best individuals */
   int i;
@@ -207,7 +212,7 @@ void renew_pop()
   ++gen_count;
 }
 
-int main()
+int main(void)
 {
   init();
   eval();
