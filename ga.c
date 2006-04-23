@@ -102,12 +102,13 @@ bool job_done(void)
 void update_best(int ind_idx)
 {
   int i = elitism_size - 1;
-  while (rating[ind_idx] > rating[best[i]] && i >= 0) {
-    best[i+1] = best[i];
-    --i;
-  }
+  while (rating[ind_idx] > rating[best[i]] && i >= 0)
+    {
+      best[i+1] = best[i];
+      --i;
+    }
   best[i+1] = ind_idx;
-}    
+}
 
 
 /* OneMax function. Reimplement for other fitness functions. */
@@ -130,10 +131,11 @@ void eval(void)
     best[i] = 0;
   /* evaluate fitness for all individuals and record
      elitism_size best of them */
-  for (i = 0; i < pop_size; ++i) {
-    rating[i] = fitness(pop[i]);
-    update_best(i);
-  }
+  for (i = 0; i < pop_size; ++i)
+    {
+      rating[i] = fitness(pop[i]);
+      update_best(i);
+    }
 }
 
 /* selects an individual using the tournament selection scheme */
@@ -142,11 +144,12 @@ void select_ind(p_ind ind, p_pop pop)
   int best = random_int(pop_size-1);
   int candidate;
   int i;
-  for (i = 0; i < tournament_size-1; ++i) {
-    candidate = random_int(pop_size-1);
-    if (rating[candidate] > rating[best])
-      best = candidate;
-  }
+  for (i = 0; i < tournament_size-1; ++i)
+    {
+      candidate = random_int(pop_size-1);
+      if (rating[candidate] > rating[best])
+        best = candidate;
+    }
   for (i = 0; i < chromo_len; ++i)
     ind[i] = pop[best][i];
 }
@@ -192,15 +195,19 @@ void renew_pop(void)
   /* generate the rest of population (pop_size - 2 individuals) */
   bit_t ind1[chromo_len], ind2[chromo_len];
 
-  for (; i < pop_size; i += 2) {
-    select_ind(ind1, pop);
-    select_ind(ind2, pop);
-    if (random_trial(prob_cross)) cross(ind1, ind2);
-    if (random_trial(prob_mut)) mutate(ind1);
-    if (random_trial(prob_mut)) mutate(ind2);
-    insert(ind1, new_pop, i);
-    insert(ind2, new_pop, i+1);
-  }
+  for (; i < pop_size; i += 2)
+    {
+      select_ind(ind1, pop);
+      select_ind(ind2, pop);
+      if (random_trial(prob_cross))
+        cross(ind1, ind2);
+      if (random_trial(prob_mut))
+        mutate(ind1);
+      if (random_trial(prob_mut))
+        mutate(ind2);
+      insert(ind1, new_pop, i);
+      insert(ind2, new_pop, i+1);
+    }
 
   /* pop <-> new_pop */
   p_pop dummy;
@@ -216,11 +223,12 @@ int main(void)
 {
   init();
   eval();
-  while (!job_done()) {
-    renew_pop();
-    eval();
-    output();
-  }
+  while (!job_done())
+    {
+      renew_pop();
+      eval();
+      output();
+    }
   deallocate(pop);
   deallocate(new_pop);
 }
