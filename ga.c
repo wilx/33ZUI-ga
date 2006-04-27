@@ -3,7 +3,9 @@
 #include <errno.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <math.h>
+#include <unistd.h>
 
 /* store bits as bytes */
 typedef bool bit_t;
@@ -14,7 +16,7 @@ typedef p_ind *p_pop;
 
 /*const int pop_size = 200;*/
 #define pop_size 200
-const int chromo_len = 100;
+const size_t chromo_len = 100;
 const double prob_cross = 0.9;
 const double prob_mut = 0.5;
 const int tournament_size = 3;
@@ -30,6 +32,12 @@ double rating[pop_size];
 int best[elitism_size+1];
 /* generation counter */
 int gen_count = 0;
+// Shuffle bit order?
+bool shuffle = false;
+// Mapping for bit number -> elemnt of chromosome.
+size_t * bit_order = NULL;
+// Pointer to chosen fitness function.
+double (* fitness) (p_ind);
 
 /* useful wrappers around the fatal_error function */
 #define fatal() fatal_error(__FILE__, __LINE__, NULL)
@@ -37,22 +45,45 @@ int gen_count = 0;
 
 /* when called in case of a system error prints a meaningful error
    message and exits with return code 1 */
-void fatal_error(char *filename, int linenum, char *error_msg)
+void
+fatal_error(char const *filename, int linenum, char const *error_msg)
 {
   if (!error_msg)
     error_msg = strerror(errno);
   fprintf(stderr, "%s:%d: %s\n", filename, linenum, error_msg);
-  exit(1);
+  exit(EXIT_FAILURE);
 }
 
+
+inline
+bit_t
+get_bit (p_ind const ind, size_t i)
+{
+  assert (i < (size_t)chromo_len);
+  return ind[bit_order[i]];
+}
+
+inline
+void
+set_bit (p_ind ind, size_t i, bool val)
+{
+  assert (i < (size_t)chromo_len);
+  ind[bit_order[i]] = val;
+}
+
+
 /* returns a random integer in interval [0;max] */
-int random_int(int max)
+inline
+int
+random_int (int max)
 {
   return nearbyint (((double)rand () / RAND_MAX) * max);
 }
 
 /* true if succeeded, false otherwise */
-bool random_trial(double prob)
+inline
+bool
+random_trial (double prob)
 {
   return (double)rand()/RAND_MAX <= prob ? true : false;
 }
@@ -82,11 +113,27 @@ void init(void)
 {
   pop = allocate(pop);
   new_pop = allocate(new_pop);
-  int i, j;
+  size_t i, j;
   /* all bits in all individuals are randomly generated */
   for (i = 0; i < pop_size; ++i)
     for (j = 0; j < chromo_len; ++j)
       pop[i][j] = random_int(1);
+  // Shuffle bit order array.
+  if ((bit_order = (size_t *)malloc (chromo_len * sizeof (size_t))) == NULL)
+    fatal ();
+  for (i = 0; i < chromo_len; ++i)
+    {
+      bit_order[i] = i;
+    }
+  if (shuffle)
+    for (i = 0; i < chromo_len; ++i)
+      {
+        i = random_int (chromo_len);
+        j = random_int (chromo_len);
+        size_t tmp = bit_order[i];
+        bit_order[i] = bit_order[j];
+        bit_order[j] = tmp;
+      }
 }
 
 void output(void)
@@ -111,16 +158,70 @@ void update_best(int ind_idx)
 }
 
 
-/* OneMax function. Reimplement for other fitness functions. */
-double fitness(p_ind ind)
+// OneMax function.
+double 
+fitness_onemax (p_ind ind)
 {
-  int i;
-  int acc = 0;
-  for (i = 0; i < chromo_len; ++i)
-    acc += ind[i];
-  return (double)acc;
+  unsigned acc = 0;
+  for (size_t i = 0; i < chromo_len; ++i)
+    acc += get_bit (ind, i);
+  return acc;
 }
 
+
+// Rosenbrock function.
+double
+fitness_rosenbrock (p_ind ind)
+{
+  int x1 = 0;
+  int x2 = 0;
+  double sum = 0;
+  size_t const count = chromo_len / 12; // + ((chromo_len % 12) ? 1 : 0);
+  for (size_t i = 0; i < count; ++i)
+    {
+      x2 = 0;
+      size_t const base = i * 12;
+      for (size_t j = 0; j <= 12 && base + j < chromo_len; ++j)
+        x2 = x2 * 2 + get_bit (ind, base + j);
+      // Assuming 2's complement code, convert bit pattern of negative number
+      // into the number.
+      if (x2 > 2047)
+        x2 = -(4096 - x2);
+      if (i >= 1)
+        sum += 100 * pow (pow (x1, 2) - x2, 2) + pow (1 - x1, 2);
+      x1 = x2;
+    }
+  // Minimalization, the smaller the sum is the bigger is resulting fitness.
+  return -sum;
+}
+
+// F101 function.
+double
+fitness_f101 (p_ind ind)
+{
+  int x1 = 0;
+  int x2 = 0;
+  double sum = 0;
+  //size_t const count = chromo_len / 10+ ((chromo_len % 10) ? 1 : 0);
+  for (size_t i = 0; i <= 10; ++i)
+    {
+      x2 = 0;
+      size_t const base = (i * 10) % chromo_len;;
+      for (size_t j = 0; j <= 10 && base + j < chromo_len; ++j)
+        x2 = x2 * 2 + get_bit (ind, base + j);
+      // Assuming 2's complement code, convert bit pattern of negative number
+      // into the number.
+      if (x2 > 511)
+        x2 = -(1024 - x2);
+      if (i >= 1)
+        sum += 
+          -x1 * sin (sqrt (abs (x1 - x2 - 47.0)))
+          -(x2 + 47.0) * sin (sqrt (abs (x2 + 47 + x1 / 2.0)));
+      x1 = x2;
+    }
+  // Minimalization, thus the minus.
+  return -sum;
+}
 
 
 void eval(void)
@@ -143,7 +244,7 @@ void select_ind(p_ind ind, p_pop pop)
 {
   int best = random_int(pop_size-1);
   int candidate;
-  int i;
+  size_t i;
   for (i = 0; i < tournament_size-1; ++i)
     {
       candidate = random_int(pop_size-1);
@@ -157,8 +258,7 @@ void select_ind(p_ind ind, p_pop pop)
 /* inserts individual ind into population pop at position pos*/
 void insert(p_ind ind, p_pop pop, int position)
 {
-  int i;
-  for (i = 0; i < chromo_len; ++i)
+  for (size_t i = 0; i < chromo_len; ++i)
     pop[position][i] = ind[i];
 }
 
@@ -178,10 +278,10 @@ void cross(p_ind ind1, p_ind ind2)
 }
 
 /* the mutation operator, modifies individual in place */
-void mutate(p_ind ind)
+extern void mutate(p_ind ind)
 {
   int bit = random_int(chromo_len-1);
-  ind[bit] = ind[bit] ? 0 : 1;
+  set_bit (ind, bit, get_bit (ind, bit) ? false : true);
 }
 
 /* generates new_pop from pop and exchanges pop and new_pop */
@@ -219,8 +319,57 @@ void renew_pop(void)
   ++gen_count;
 }
 
-int main(void)
+
+void
+usage (void)
 {
+  fprintf (stderr, 
+           "Usage: ga -sffoh?\n"
+           "\t-s\tshuffle chromosome\n"
+           "\t-f\tF101 fitness function\n"
+           "\t-r\tRosenbrock fitness function\n"
+           "\t-o\tOneMax fitness function\n"
+           "\t-h\tthis help\n"
+           "\t-?\tthis help\n");
+  exit (EXIT_FAILURE);
+}
+
+
+void
+analyze_options (int argc, char * const argv[])
+{
+  static char const opts[] = "sfroh?";
+
+  int ch;
+  while ((ch = getopt(argc, argv, opts)) != -1)
+    {
+      switch (ch)
+        {
+        case 's':
+          shuffle = true;
+          break;
+        case 'f':
+          fitness = fitness_f101;
+          break;
+        case 'r':
+          fitness = fitness_rosenbrock;
+          break;
+        case 'o':
+          fitness = fitness_onemax;
+          break;
+        case 'h':
+        case '?':
+        default:
+          usage ();
+        }
+    }
+}
+
+
+int
+main (int argc, char * const argv[])
+{
+  analyze_options (argc, argv);
   init();
   eval();
   while (!job_done())
@@ -231,4 +380,6 @@ int main(void)
     }
   deallocate(pop);
   deallocate(new_pop);
+
+  exit (EXIT_SUCCESS);
 }
