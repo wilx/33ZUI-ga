@@ -1,3 +1,4 @@
+#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -6,6 +7,8 @@
 #include <assert.h>
 #include <math.h>
 #include <unistd.h>
+#include <time.h>
+
 
 /* store bits as bytes */
 typedef bool bit_t;
@@ -14,13 +17,11 @@ typedef bit_t *p_ind;
 /* pointer to population = pointer to the first individual in it */
 typedef p_ind *p_pop;
 
-/*const int pop_size = 200;*/
-#define pop_size 200
+#define pop_size 100
 const size_t chromo_len = 100;
 const double prob_cross = 0.9;
 const double prob_mut = 0.5;
 const int tournament_size = 3;
-/*const int elitism_size = 2;*/
 #define elitism_size 2
 
 /* current population is stored in pop, new population is
@@ -37,7 +38,9 @@ bool shuffle = false;
 // Mapping for bit number -> elemnt of chromosome.
 size_t * bit_order = NULL;
 // Pointer to chosen fitness function.
-double (* fitness) (p_ind);
+double (* fitness) (p_ind) = NULL;
+// Target number of generations.
+long gen_max = 50;
 
 /* useful wrappers around the fatal_error function */
 #define fatal() fatal_error(__FILE__, __LINE__, NULL)
@@ -143,7 +146,7 @@ void output(void)
 
 bool job_done(void)
 {
-  return (gen_count >= 50) ? true : false;
+  return (gen_count >= gen_max) ? true : false;
 }
 
 void update_best(int ind_idx)
@@ -169,56 +172,60 @@ fitness_onemax (p_ind ind)
 }
 
 
+// Decode 2's complement bit pattern of length len into number.
+int
+decode_num (p_ind ind, size_t base, size_t len)
+{
+  int x = 0;
+  for (size_t j = 0; j < len; ++j)
+    x = x * 2 + get_bit (ind, base + j);
+  if (x >= (1 << (len - 1)))
+    x = -((1 << len) - x);
+  return x;
+}
+
+
 // Rosenbrock function.
 double
 fitness_rosenbrock (p_ind ind)
 {
-  int x1 = 0;
-  int x2 = 0;
   double sum = 0;
   size_t const count = chromo_len / 12; // + ((chromo_len % 12) ? 1 : 0);
-  for (size_t i = 0; i < count; ++i)
+  for (size_t i = 0; i < count / 2; ++i)
     {
-      x2 = 0;
-      size_t const base = i * 12;
-      for (size_t j = 0; j <= 12 && base + j < chromo_len; ++j)
-        x2 = x2 * 2 + get_bit (ind, base + j);
-      // Assuming 2's complement code, convert bit pattern of negative number
-      // into the number.
-      if (x2 > 2047)
-        x2 = -(4096 - x2);
-      if (i >= 1)
-        sum += 100 * pow (pow (x1, 2) - x2, 2) + pow (1 - x1, 2);
-      x1 = x2;
+      size_t base = i * 12 * 2;
+      int const x1 = decode_num (ind, base, 12);
+      int const x2 = decode_num (ind, base + 12, 12);
+      sum += 100 * pow (pow (x1, 2) - x2, 2) + pow (1 - x1, 2);
     }
+  // We have only 4 instance of Rosenborck function. The assignment says we
+  // should have 10. Scale the function so that we can comapre against docs.
+  sum = sum * 10.0 / count;
+
   // Minimalization, the smaller the sum is the bigger is resulting fitness.
   return -sum;
 }
+
 
 // F101 function.
 double
 fitness_f101 (p_ind ind)
 {
-  int x1 = 0;
-  int x2 = 0;
   double sum = 0;
-  //size_t const count = chromo_len / 10+ ((chromo_len % 10) ? 1 : 0);
-  for (size_t i = 0; i <= 10; ++i)
+  // 5 pairs of x1 and x2.
+  for (size_t i = 0; i < 5; ++i)
     {
-      x2 = 0;
-      size_t const base = (i * 10) % chromo_len;;
-      for (size_t j = 0; j <= 10 && base + j < chromo_len; ++j)
-        x2 = x2 * 2 + get_bit (ind, base + j);
-      // Assuming 2's complement code, convert bit pattern of negative number
-      // into the number.
-      if (x2 > 511)
-        x2 = -(1024 - x2);
-      if (i >= 1)
-        sum += 
-          -x1 * sin (sqrt (abs (x1 - x2 - 47.0)))
-          -(x2 + 47.0) * sin (sqrt (abs (x2 + 47 + x1 / 2.0)));
-      x1 = x2;
+      size_t base = i * 10 * 2;
+      int const x1 = decode_num (ind, base, 10);
+      int const x2 = decode_num (ind, base + 10, 10);
+      sum += 
+        -x1 * sin (sqrt (abs (x1 - x2 - 47.0)))
+        -(x2 + 47.0) * sin (sqrt (abs (x2 + 47 + x1 / 2.0)));
     }
+  // We have only 5 instances of F101 function. Scale so that is comparable
+  // with docs of asignment.
+  sum = sum * 2;
+
   // Minimalization, thus the minus.
   return -sum;
 }
@@ -244,14 +251,14 @@ void select_ind(p_ind ind, p_pop pop)
 {
   int best = random_int(pop_size-1);
   int candidate;
-  size_t i;
+  int i;
   for (i = 0; i < tournament_size-1; ++i)
     {
       candidate = random_int(pop_size-1);
       if (rating[candidate] > rating[best])
         best = candidate;
     }
-  for (i = 0; i < chromo_len; ++i)
+  for (i = 0; i < (int)chromo_len; ++i)
     ind[i] = pop[best][i];
 }
 
@@ -281,7 +288,7 @@ void cross(p_ind ind1, p_ind ind2)
 extern void mutate(p_ind ind)
 {
   int bit = random_int(chromo_len-1);
-  set_bit (ind, bit, get_bit (ind, bit) ? false : true);
+  set_bit (ind, bit, !get_bit (ind, bit));
 }
 
 /* generates new_pop from pop and exchanges pop and new_pop */
@@ -324,8 +331,9 @@ void
 usage (void)
 {
   fprintf (stderr, 
-           "Usage: ga -sffoh?\n"
+           "Usage: ga [-s] [-g num] -froh?\n"
            "\t-s\tshuffle chromosome\n"
+           "\t-g num\ttarget number of generations (num > 0)\n"
            "\t-f\tF101 fitness function\n"
            "\t-r\tRosenbrock fitness function\n"
            "\t-o\tOneMax fitness function\n"
@@ -338,7 +346,7 @@ usage (void)
 void
 analyze_options (int argc, char * const argv[])
 {
-  static char const opts[] = "sfroh?";
+  static char const opts[] = "sfrohg:";
 
   int ch;
   while ((ch = getopt(argc, argv, opts)) != -1)
@@ -348,6 +356,19 @@ analyze_options (int argc, char * const argv[])
         case 's':
           shuffle = true;
           break;
+        case 'g':
+          {
+            long gens = 0;
+            char * endptr = 0;
+            gens = strtol (optarg, &endptr, 10);
+            if (gens <= 0 || (endptr && *endptr != '\0'))
+              {
+                fprintf (stderr, "bad num for -g option\n");
+                usage ();
+              }
+            gen_max = gens;
+            break;
+          }
         case 'f':
           fitness = fitness_f101;
           break;
@@ -358,7 +379,6 @@ analyze_options (int argc, char * const argv[])
           fitness = fitness_onemax;
           break;
         case 'h':
-        case '?':
         default:
           usage ();
         }
@@ -369,7 +389,12 @@ analyze_options (int argc, char * const argv[])
 int
 main (int argc, char * const argv[])
 {
+  srand (time (0) ^ getpid ());
+  if (argc < 2)
+    usage ();
   analyze_options (argc, argv);
+  if (!fitness)
+    usage ();
   init();
   eval();
   while (!job_done())
