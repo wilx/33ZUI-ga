@@ -41,6 +41,8 @@ size_t * bit_order = NULL;
 double (* fitness) (p_ind) = NULL;
 // Target number of generations.
 long gen_max = 50;
+// Output only last generation info.
+bool only_last = false;
 
 /* useful wrappers around the fatal_error function */
 #define fatal() fatal_error(__FILE__, __LINE__, NULL)
@@ -141,12 +143,13 @@ void init(void)
 
 void output(void)
 {
-  printf("generation: %03d fitness: %f\n", gen_count, rating[best[0]]);
+  if (! only_last || (only_last && gen_count == gen_max))
+    printf("generation: %03d fitness: %f\n", gen_count, rating[best[0]]);
 }
 
 bool job_done(void)
 {
-  return (gen_count >= gen_max) ? true : false;
+  return gen_count >= gen_max;
 }
 
 void update_best(int ind_idx)
@@ -190,7 +193,7 @@ double
 fitness_rosenbrock (p_ind ind)
 {
   double sum = 0;
-  size_t const count = chromo_len / 12; // + ((chromo_len % 12) ? 1 : 0);
+  size_t const count = chromo_len / 12;
   for (size_t i = 0; i < count / 2; ++i)
     {
       size_t base = i * 12 * 2;
@@ -200,7 +203,7 @@ fitness_rosenbrock (p_ind ind)
     }
   // We have only 4 instance of Rosenborck function. The assignment says we
   // should have 10. Scale the function so that we can comapre against docs.
-  sum = sum * 10.0 / count;
+  sum = sum * 10.0 / (count / 2);
 
   // Minimalization, the smaller the sum is the bigger is resulting fitness.
   return -sum;
@@ -346,7 +349,7 @@ usage (void)
 void
 analyze_options (int argc, char * const argv[])
 {
-  static char const opts[] = "sfrohg:";
+  static char const opts[] = "sfrohlg:";
 
   int ch;
   while ((ch = getopt(argc, argv, opts)) != -1)
@@ -355,6 +358,9 @@ analyze_options (int argc, char * const argv[])
         {
         case 's':
           shuffle = true;
+          break;
+        case 'l':
+          only_last = true;
           break;
         case 'g':
           {
