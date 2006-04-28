@@ -133,8 +133,7 @@ void init(void)
   if (shuffle)
     for (i = 0; i < chromo_len; ++i)
       {
-        i = random_int (chromo_len);
-        j = random_int (chromo_len);
+        j = random_int (chromo_len - 1);
         size_t tmp = bit_order[i];
         bit_order[i] = bit_order[j];
         bit_order[j] = tmp;
@@ -288,7 +287,7 @@ void cross(p_ind ind1, p_ind ind2)
 }
 
 /* the mutation operator, modifies individual in place */
-extern void mutate(p_ind ind)
+void mutate(p_ind ind)
 {
   int bit = random_int(chromo_len-1);
   set_bit (ind, bit, !get_bit (ind, bit));
